@@ -153,6 +153,10 @@ async def command_bot(update, context, language=None, prompt=translator_prompt, 
                     message = get_image_message(image_url, [{"text": message}], engine)
                 else:
                     message = get_image_message(image_url, [{"type": "text", "text": message}], engine)
+            elif file_url:
+                image_url = file_url
+                message = Document_extract(file_url, image_url, engine) + message
+
             await getChatGPT(update, context, title, robot, message, chatid, messageid, convo_id, message_thread_id, pass_history)
     else:
         message = await context.bot.send_message(
@@ -310,8 +314,9 @@ async def getChatGPT(update, context, title, robot, message, chatid, messageid, 
         print(tmpresult)
         print('\033[0m')
         api_key = Users.get_config(convo_id, "api_key")
+        systemprompt = Users.get_config(convo_id, "systemprompt")
         if api_key:
-            robot.reset(convo_id=convo_id, system_prompt=config.systemprompt)
+            robot.reset(convo_id=convo_id, system_prompt=systemprompt)
         tmpresult = f"{tmpresult}\n\n`{e}`"
     print(tmpresult)
     now_result = escape(tmpresult, italic=False)
@@ -328,7 +333,7 @@ async def getChatGPT(update, context, title, robot, message, chatid, messageid, 
         else:
             info = tmpresult
         prompt = (
-            f"You are a professional Q&A expert. You will now be given reference information. Based on the reference information, please help me ask three most relevant questions that you most want to know from my perspective. Be concise and to the point. Do not have numbers in front of questions. Separate each question with a line break. Only output three questions in {config.LANGUAGE}, no need for any explanation. reference infomation is provided inside <infomation></infomation> XML tags."
+            f"You are a professional Q&A expert. You will now be given reference information. Based on the reference information, please help me ask three most relevant questions that you most want to know from my perspective. Be concise and to the point. Do not have numbers in front of questions. Separate each question with a line break. Only output three questions in {language}, no need for any explanation. reference infomation is provided inside <infomation></infomation> XML tags."
             "Here is the reference infomation, inside <infomation></infomation> XML tags:"
             "<infomation>"
             "{}"
@@ -349,115 +354,120 @@ async def getChatGPT(update, context, title, robot, message, chatid, messageid, 
 @decorators.Authorization
 async def button_press(update, context):
     """Function to handle the button press"""
-    _, rawtext, _, _, _, _, _, _, convo_id, _, _, voice_text = await GetMesageInfo(update, context)
+    _, _, _, _, _, _, _, _, convo_id, _, _, _ = await GetMesageInfo(update, context)
     callback_query = update.callback_query
     info_message = update_info_message(convo_id)
     await callback_query.answer()
     data = callback_query.data
     banner = strings['message_banner'][get_current_lang(convo_id)]
-
-    if data.endswith("_MODELS"):
-        data = data[:-7]
-        update_ENGINE(data, convo_id)
-        try:
-            info_message = update_info_message(convo_id)
-            if  info_message + banner != rawtext:
+    import telegram
+    try:
+        if data.endswith("_MODELS"):
+            data = data[:-7]
+            update_ENGINE(data, convo_id)
+            try:
+                info_message = update_info_message(convo_id)
                 message = await callback_query.edit_message_text(
                     text=escape(info_message + banner),
                     reply_markup=InlineKeyboardMarkup(update_models_buttons(convo_id)),
                     parse_mode='MarkdownV2'
                 )
-        except Exception as e:
-            logger.info(e)
-            pass
-    elif data.startswith("MODELS"):
-        message = await callback_query.edit_message_text(
-            text=escape(info_message + banner),
-            reply_markup=InlineKeyboardMarkup(update_models_buttons(convo_id)),
-            parse_mode='MarkdownV2'
-        )
+            except Exception as e:
+                logger.info(e)
+                pass
+        elif data.startswith("MODELS"):
+            message = await callback_query.edit_message_text(
+                text=escape(info_message + banner),
+                reply_markup=InlineKeyboardMarkup(update_models_buttons(convo_id)),
+                parse_mode='MarkdownV2'
+            )
 
-    elif data.endswith("_LANGUAGES"):
-        data = data[:-10]
-        update_language_status(data, chat_id=convo_id)
-        try:
-            info_message = update_info_message(convo_id)
-            if  info_message != rawtext:
+        elif data.endswith("_LANGUAGES"):
+            data = data[:-10]
+            update_language_status(data, chat_id=convo_id)
+            try:
+                info_message = update_info_message(convo_id)
                 message = await callback_query.edit_message_text(
                     text=escape(info_message, italic=False),
                     reply_markup=InlineKeyboardMarkup(update_menu_buttons(LANGUAGES, "_LANGUAGES", convo_id)),
                     parse_mode='MarkdownV2'
                 )
-        except Exception as e:
-            logger.info(e)
-            pass
-    elif data.startswith("LANGUAGE"):
-        message = await callback_query.edit_message_text(
-            text=escape(info_message, italic=False),
-            reply_markup=InlineKeyboardMarkup(update_menu_buttons(LANGUAGES, "_LANGUAGES", convo_id)),
-            parse_mode='MarkdownV2'
-        )
+            except Exception as e:
+                logger.info(e)
+                pass
+        elif data.startswith("LANGUAGE"):
+            message = await callback_query.edit_message_text(
+                text=escape(info_message, italic=False),
+                reply_markup=InlineKeyboardMarkup(update_menu_buttons(LANGUAGES, "_LANGUAGES", convo_id)),
+                parse_mode='MarkdownV2'
+            )
 
-    if data.endswith("_PREFERENCES"):
-        data = data[:-12]
-        try:
-            current_data = Users.get_config(convo_id, data)
-            Users.set_config(convo_id, data, not current_data)
-        except Exception as e:
-            logger.info(e)
-        try:
-            info_message = update_info_message(convo_id)
-            if  info_message != rawtext:
+        if data.endswith("_PREFERENCES"):
+            data = data[:-12]
+            try:
+                current_data = Users.get_config(convo_id, data)
+                Users.set_config(convo_id, data, not current_data)
+            except Exception as e:
+                logger.info(e)
+            try:
+                info_message = update_info_message(convo_id)
                 message = await callback_query.edit_message_text(
                     text=escape(info_message, italic=False),
                     reply_markup=InlineKeyboardMarkup(update_menu_buttons(PREFERENCES, "_PREFERENCES", convo_id)),
                     parse_mode='MarkdownV2'
                 )
-        except Exception as e:
-            logger.info(e)
-            pass
-    elif data.startswith("PREFERENCES"):
-        message = await callback_query.edit_message_text(
-            text=escape(info_message, italic=False),
-            reply_markup=InlineKeyboardMarkup(update_menu_buttons(PREFERENCES, "_PREFERENCES", convo_id)),
-            parse_mode='MarkdownV2'
-        )
+            except Exception as e:
+                logger.info(e)
+                pass
+        elif data.startswith("PREFERENCES"):
+            message = await callback_query.edit_message_text(
+                text=escape(info_message, italic=False),
+                reply_markup=InlineKeyboardMarkup(update_menu_buttons(PREFERENCES, "_PREFERENCES", convo_id)),
+                parse_mode='MarkdownV2'
+            )
 
-    if data.endswith("_PLUGINS"):
-        data = data[:-8]
-        try:
-            current_data = Users.get_config(convo_id, data)
-            Users.set_config(convo_id, data, not current_data)
-            plugins_config = Users.extract_plugins_config(convo_id)
-            robot, role = get_robot(convo_id)
-            if robot:
-                robot.plugins[convo_id] = plugins_config
-        except Exception as e:
-            logger.info(e)
-        try:
-            info_message = update_info_message(convo_id)
-            if  info_message != rawtext:
+        if data.endswith("_PLUGINS"):
+            data = data[:-8]
+            try:
+                current_data = Users.get_config(convo_id, data)
+                Users.set_config(convo_id, data, not current_data)
+                plugins_config = Users.extract_plugins_config(convo_id)
+                robot, role = get_robot(convo_id)
+                if robot:
+                    robot.plugins[convo_id] = plugins_config
+            except Exception as e:
+                logger.info(e)
+            try:
+                info_message = update_info_message(convo_id)
                 message = await callback_query.edit_message_text(
                     text=escape(info_message, italic=False),
                     reply_markup=InlineKeyboardMarkup(update_menu_buttons(PLUGINS, "_PLUGINS", convo_id)),
                     parse_mode='MarkdownV2'
                 )
-        except Exception as e:
-            logger.info(e)
-            pass
-    elif data.startswith("PLUGINS"):
-        message = await callback_query.edit_message_text(
-            text=escape(info_message, italic=False),
-            reply_markup=InlineKeyboardMarkup(update_menu_buttons(PLUGINS, "_PLUGINS", convo_id)),
-            parse_mode='MarkdownV2'
-        )
+            except Exception as e:
+                logger.info(e)
+                pass
+        elif data.startswith("PLUGINS"):
+            message = await callback_query.edit_message_text(
+                text=escape(info_message, italic=False),
+                reply_markup=InlineKeyboardMarkup(update_menu_buttons(PLUGINS, "_PLUGINS", convo_id)),
+                parse_mode='MarkdownV2'
+            )
 
-    elif data.startswith("BACK"):
-        message = await callback_query.edit_message_text(
-            text=escape(info_message, italic=False),
-            reply_markup=InlineKeyboardMarkup(update_first_buttons_message(convo_id)),
-            parse_mode='MarkdownV2'
-        )
+        elif data.startswith("BACK"):
+            message = await callback_query.edit_message_text(
+                text=escape(info_message, italic=False),
+                reply_markup=InlineKeyboardMarkup(update_first_buttons_message(convo_id)),
+                parse_mode='MarkdownV2'
+            )
+    except telegram.error.BadRequest as e:
+        print('\033[31m')
+        traceback.print_exc()
+        if "Message to edit not found" in str(e):
+            print("error: telegram.error.BadRequest: Message to edit not found!")
+        else:
+            print(f"error: {str(e)}")
+        print('\033[0m')
 
 @decorators.GroupAuthorization
 @decorators.Authorization
@@ -635,8 +645,40 @@ if __name__ == '__main__':
     application.add_handler(InlineQueryHandler(inlinequery))
     application.add_handler(CallbackQueryHandler(button_press))
     application.add_handler(MessageHandler((filters.TEXT | filters.VOICE) & ~filters.COMMAND, lambda update, context: command_bot(update, context, prompt=None, has_command=False), block = False))
-    application.add_handler(MessageHandler(filters.CAPTION & ((filters.PHOTO & ~filters.COMMAND) | (filters.Document.FileExtension("jpg") | filters.Document.FileExtension("jpeg") | filters.Document.FileExtension("png"))), lambda update, context: command_bot(update, context, prompt=None, has_command=False)))
-    application.add_handler(MessageHandler(~filters.CAPTION & ((filters.PHOTO & ~filters.COMMAND) | (filters.Document.PDF | filters.Document.TXT | filters.Document.DOC | filters.Document.FileExtension("jpg") | filters.Document.FileExtension("jpeg") | filters.Document.FileExtension("md") | filters.Document.FileExtension("py") | filters.AUDIO | filters.Document.FileExtension("wav"))), handle_file))
+    application.add_handler(MessageHandler(
+        filters.CAPTION &
+        (
+            (filters.PHOTO & ~filters.COMMAND) |
+            (
+                filters.Document.PDF |
+                filters.Document.TXT |
+                filters.Document.DOC |
+                filters.Document.FileExtension("jpg") |
+                filters.Document.FileExtension("jpeg") |
+                filters.Document.FileExtension("png") |
+                filters.Document.FileExtension("md") |
+                filters.Document.FileExtension("py") |
+                filters.Document.FileExtension("yml")
+            )
+        ), lambda update, context: command_bot(update, context, prompt=None, has_command=False)))
+    application.add_handler(MessageHandler(
+        ~filters.CAPTION &
+        (
+            (filters.PHOTO & ~filters.COMMAND) |
+            (
+                filters.Document.PDF |
+                filters.Document.TXT |
+                filters.Document.DOC |
+                filters.Document.FileExtension("jpg") |
+                filters.Document.FileExtension("jpeg") |
+                filters.Document.FileExtension("png") |
+                filters.Document.FileExtension("md") |
+                filters.Document.FileExtension("py") |
+                filters.Document.FileExtension("yml") |
+                filters.AUDIO |
+                filters.Document.FileExtension("wav")
+            )
+        ), handle_file))
     application.add_handler(MessageHandler(filters.COMMAND, unknown))
     application.add_error_handler(error)
 

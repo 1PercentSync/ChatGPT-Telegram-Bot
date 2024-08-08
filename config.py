@@ -156,19 +156,19 @@ def update_ENGINE(data = None, chat_id=None):
     api_url = Users.get_config(chat_id, "api_url")
     if api_key:
         if "claude" in engine:
-            ChatGPTbot = chatgpt(api_key=f"{api_key}", api_url=api_url, engine=engine, system_prompt=claude_systemprompt, temperature=temperature)
+            ChatGPTbot = chatgpt(api_key=f"{api_key}", api_url=api_url, engine=engine, system_prompt=claude_systemprompt, temperature=temperature, convo_id=chat_id)
         else:
-            ChatGPTbot = chatgpt(api_key=f"{api_key}", api_url=api_url, engine=engine, system_prompt=systemprompt, temperature=temperature)
-        SummaryBot = chatgpt(api_key=f"{api_key}", api_url=api_url, engine="gpt-3.5-turbo", system_prompt=systemprompt, temperature=temperature, use_plugins=False)
+            ChatGPTbot = chatgpt(api_key=f"{api_key}", api_url=api_url, engine=engine, system_prompt=systemprompt, temperature=temperature, convo_id=chat_id)
+        SummaryBot = chatgpt(api_key=f"{api_key}", api_url=api_url, engine="gpt-3.5-turbo", system_prompt=systemprompt, temperature=temperature, use_plugins=False, convo_id=chat_id)
         whisperBot = whisper(api_key=f"{api_key}", api_url=api_url)
     if CLAUDE_API and "claude-2.1" in engine:
-        claudeBot = claude(api_key=f"{CLAUDE_API}", engine=engine, system_prompt=claude_systemprompt, temperature=temperature)
+        claudeBot = claude(api_key=f"{CLAUDE_API}", engine=engine, system_prompt=claude_systemprompt, temperature=temperature, convo_id=chat_id)
     if CLAUDE_API and "claude-3" in engine:
-        claude3Bot = claude3(api_key=f"{CLAUDE_API}", engine=engine, system_prompt=claude_systemprompt, temperature=temperature)
+        claude3Bot = claude3(api_key=f"{CLAUDE_API}", engine=engine, system_prompt=claude_systemprompt, temperature=temperature, convo_id=chat_id)
     if GROQ_API_KEY and ("mixtral" in engine or "llama" in engine):
-        groqBot = groq(api_key=f"{GROQ_API_KEY}", engine=engine, system_prompt=systemprompt, temperature=temperature)
+        groqBot = groq(api_key=f"{GROQ_API_KEY}", engine=engine, system_prompt=systemprompt, temperature=temperature, convo_id=chat_id)
     if GOOGLE_AI_API_KEY and "gemini" in engine:
-        gemini_Bot = gemini(api_key=f"{GOOGLE_AI_API_KEY}", engine=engine, system_prompt=systemprompt, temperature=temperature)
+        gemini_Bot = gemini(api_key=f"{GOOGLE_AI_API_KEY}", engine=engine, system_prompt=systemprompt, temperature=temperature, convo_id=chat_id)
 
 def update_language_status(language, chat_id=None):
     global Users
@@ -302,18 +302,36 @@ def get_status(chatid = None, item = None):
     return "✅ " if Users.get_config(chatid, item) else "☑️ "
 
 def create_buttons(strings, plugins_status=False, lang="English", button_text=None, Suffix="", chatid=None):
-    # 过滤出长度小于15的字符串
-    filtered_strings1 = [s for s in strings if len(delete_model_digit_tail(s.split("-"))) <= 14]
-    filtered_strings2 = [s for s in strings if len(delete_model_digit_tail(s.split("-"))) > 14]
+    if plugins_status:
+        strings_array = {kv:kv for kv in strings}
+    else:
+        # 过滤出长度小于15的字符串
+        abbreviation_strings = [delete_model_digit_tail(s.split("-")) for s in strings]
+        from collections import Counter
+        counter = Counter(abbreviation_strings)
+        filtered_counter = {key: count for key, count in counter.items() if count > 1}
+        # print(filtered_counter)
+
+        strings_array = {}
+        for s in strings:
+            if delete_model_digit_tail(s.split("-")) in filtered_counter:
+                strings_array[s] = s
+            else:
+                strings_array[delete_model_digit_tail(s.split('-'))] = s
+
+    filtered_strings1 = {k:v for k, v in strings_array.items() if len(k) <= 14}
+    # print(filtered_strings1)
+    filtered_strings2 = {k:v for k, v in strings_array.items() if len(k) > 14}
+    # print(filtered_strings2)
 
     buttons = []
     temp = []
 
-    for string in filtered_strings1:
+    for k, v in filtered_strings1.items():
         if plugins_status:
-            button = InlineKeyboardButton(f"{get_status(chatid, string)}{button_text[string][lang]}", callback_data=string + Suffix)
+            button = InlineKeyboardButton(f"{get_status(chatid, k)}{button_text[k][lang]}", callback_data=k + Suffix)
         else:
-            button = InlineKeyboardButton(delete_model_digit_tail(string.split("-")), callback_data=string + Suffix)
+            button = InlineKeyboardButton(k, callback_data=v + Suffix)
         temp.append(button)
 
         # 每两个按钮一组
@@ -325,22 +343,23 @@ def create_buttons(strings, plugins_status=False, lang="English", button_text=No
     if temp:
         buttons.append(temp)
 
-    for string in filtered_strings2:
+    for k, v in filtered_strings2.items():
         if plugins_status:
-            button = InlineKeyboardButton(f"{get_status(chatid, string)}{button_text[string][lang]}", callback_data=string + Suffix)
+            button = InlineKeyboardButton(f"{get_status(chatid, k)}{button_text[k][lang]}", callback_data=k + Suffix)
         else:
-            button = InlineKeyboardButton(delete_model_digit_tail(string.split("-")), callback_data=string + Suffix)
+            button = InlineKeyboardButton(k, callback_data=v + Suffix)
         buttons.append([button])
 
     return buttons
 
 initial_model = [
     "gpt-4o",
-    "gpt-4-turbo-2024-04-09",
-    "gpt-3.5-turbo",
+    "gpt-4o-mini",
     "claude-3-opus-20240229",
     "claude-3-5-sonnet-20240620",
-    "claude-3-haiku-20240307",
+    # "gpt-4-turbo-2024-04-09",
+    # "gpt-3.5-turbo",
+    # "claude-3-haiku-20240307",
 ]
 
 if GROQ_API_KEY:
@@ -380,6 +399,7 @@ if GET_MODELS:
 CUSTOM_MODELS = os.environ.get('CUSTOM_MODELS', None)
 if CUSTOM_MODELS:
     CUSTOM_MODELS_LIST = [id for id in CUSTOM_MODELS.split(",")]
+    # print("CUSTOM_MODELS_LIST", CUSTOM_MODELS_LIST)
 else:
     CUSTOM_MODELS_LIST = None
 if CUSTOM_MODELS_LIST:
